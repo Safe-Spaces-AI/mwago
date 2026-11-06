@@ -424,23 +424,33 @@ def type_text_fast(text):
 def type_text(text):
     paste_block_to_pc(text)
 
-def get_local_ip():
+def get_all_ips():
+    ips = []
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
+        primary = s.getsockname()[0]
         s.close()
-        if ip and not ip.startswith("127."):
-            return ip
+        if primary and not primary.startswith("127."):
+            ips.append(primary)
     except Exception:
         pass
+
     try:
-        ip = socket.gethostbyname(socket.gethostname())
-        if ip and not ip.startswith("127."):
-            return ip
+        host_name = socket.gethostname()
+        for ip in socket.gethostbyname_ex(host_name)[2]:
+            if ip and not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
     except Exception:
         pass
-    return "127.0.0.1"
+
+    if not ips:
+        ips.append("127.0.0.1")
+    return ips
+
+def get_local_ip():
+    ips = get_all_ips()
+    return ips[0]
 
 # ============================================================================
 # Command Router
@@ -1056,8 +1066,9 @@ def main():
         input("Press Enter to exit...")
         sys.exit(1)
 
-    ip = get_local_ip()
-    url = f"http://{ip}:{active_port}"
+    ips = get_all_ips()
+    primary_ip = ips[0]
+    url = f"http://{primary_ip}:{active_port}"
 
     print("=" * 64)
     print("   MWAGO - YOUR REMOTE MOUSE & PROJECTOR CONTROLLER")
@@ -1070,9 +1081,15 @@ def main():
         print(f"    - Screen {i+1}: {s['width']}x{s['height']} {primary_tag}")
     if active_port != default_port:
         print(f"\n[i] Note: Port {default_port} was busy, using port {active_port}.")
-    print(f"\n[+] Mwago Server is ACTIVE on your local Wi-Fi:")
+    print(f"\n[+] Mwago Server is ACTIVE:")
     print(f"\n    >>>  {url}  <<<\n")
-    print("    Open this address in your phone's browser (Android 4+ supported).")
+    if len(ips) > 1:
+        print("    Alternative interface IP(s):")
+        for alt_ip in ips[1:]:
+            print(f"      - http://{alt_ip}:{active_port}")
+        print()
+    print("    Open the link above in your phone's browser (Android 4+ supported).")
+    print("    IMPORTANT: Phone and PC must be connected to the same Wi-Fi / Hotspot.")
     print("    Press Ctrl+C to stop.\n" + "=" * 64)
 
     try:
