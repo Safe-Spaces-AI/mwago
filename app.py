@@ -18,6 +18,16 @@ import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
+# Safe console encoding for Windows PyInstaller binaries
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    except Exception:
+        pass
+
 # ============================================================================
 # Win32 API Constants & Data Structures
 # ============================================================================
@@ -420,9 +430,17 @@ def get_local_ip():
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        return ip
+        if ip and not ip.startswith("127."):
+            return ip
     except Exception:
-        return "192.168.18.4"
+        pass
+    try:
+        ip = socket.gethostbyname(socket.gethostname())
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+    return "127.0.0.1"
 
 # ============================================================================
 # Command Router
@@ -1043,7 +1061,7 @@ def main():
 
     print("=" * 64)
     print("   MWAGO - YOUR REMOTE MOUSE & PROJECTOR CONTROLLER")
-    print("   Safe Spaces AI Innovation Hub • Mbarara, Uganda")
+    print("   Safe Spaces AI Innovation Hub | Mbarara, Uganda")
     print("   https://safespaceshub.com  |  mwago.safespaceshub.com")
     print("=" * 64)
     print(f"\n[+] Detected {len(screens)} screen(s) connected to PC.")
@@ -1053,7 +1071,7 @@ def main():
     if active_port != default_port:
         print(f"\n[i] Note: Port {default_port} was busy, using port {active_port}.")
     print(f"\n[+] Mwago Server is ACTIVE on your local Wi-Fi:")
-    print(f"\n    👉  {url}  👈\n")
+    print(f"\n    >>>  {url}  <<<\n")
     print("    Open this address in your phone's browser (Android 4+ supported).")
     print("    Press Ctrl+C to stop.\n" + "=" * 64)
 
