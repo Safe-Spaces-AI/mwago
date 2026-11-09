@@ -425,24 +425,53 @@ def type_text(text):
     paste_block_to_pc(text)
 
 def get_all_ips():
+    """Detect all IPv4 addresses, strictly prioritizing physical Wi-Fi and Ethernet over virtual/VPN adapters."""
     ips = []
+    wifi_ips = []
+    eth_ips = []
+    other_ips = []
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        primary = s.getsockname()[0]
-        s.close()
-        if primary and not primary.startswith("127."):
-            ips.append(primary)
+        creation_flags = 0x08000000  # CREATE_NO_WINDOW
+        out = subprocess.check_output(['ipconfig'], creationflags=creation_flags, timeout=2.0).decode('utf-8', errors='ignore')
+        curr_adapter = ''
+        for line in out.splitlines():
+            line_clean = line.strip()
+            if 'adapter' in line.lower() and ':' in line:
+                curr_adapter = line_clean.lower()
+            elif 'ipv4' in line.lower() and ':' in line:
+                ip = line.split(':')[-1].strip().replace('(Preferred)', '').strip()
+                if not ip or ip.startswith('127.') or ip.startswith('169.254'):
+                    continue
+                # Ignore VPN tunnels and virtual machine adapters as primary Wi-Fi
+                if any(w in curr_adapter for w in ['wsl', 'vethernet', 'virtual', 'protun', 'tap', 'vpn', 'tunnel']):
+                    continue
+                elif any(w in curr_adapter for w in ['wi-fi', 'wireless', 'wlan']):
+                    if ip not in wifi_ips:
+                        wifi_ips.append(ip)
+                elif any(w in curr_adapter for w in ['ethernet', 'local area connection']):
+                    if ip not in eth_ips:
+                        eth_ips.append(ip)
+                else:
+                    if ip not in other_ips:
+                        other_ips.append(ip)
     except Exception:
         pass
 
-    try:
-        host_name = socket.gethostname()
-        for ip in socket.gethostbyname_ex(host_name)[2]:
-            if ip and not ip.startswith("127.") and ip not in ips:
-                ips.append(ip)
-    except Exception:
-        pass
+    for ip in wifi_ips + eth_ips + other_ips:
+        if ip not in ips:
+            ips.append(ip)
+
+    # Fallback to socket if ipconfig returned nothing
+    if not ips:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            primary = s.getsockname()[0]
+            s.close()
+            if primary and not primary.startswith("127.") and not primary.startswith("169.254"):
+                ips.append(primary)
+        except Exception:
+            pass
 
     if not ips:
         ips.append("127.0.0.1")
@@ -968,6 +997,31 @@ EMBEDDED_HTML = """<!DOCTYPE html>
       }
     }, false);
   }
+
+  function checkHeartbeat() {
+    try {
+      var dot = document.getElementById("status-dot");
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", "/ping", true);
+      xhr.timeout = 2500;
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200 && dot) {
+            dot.innerHTML = "● Online";
+            dot.style.color = "#10b981";
+          } else if (dot) {
+            dot.innerHTML = "○ Offline";
+            dot.style.color = "#ef4444";
+          }
+        }
+      };
+      xhr.ontimeout = function() { if (dot) { dot.innerHTML = "○ Offline"; dot.style.color = "#ef4444"; } };
+      xhr.onerror = function() { if (dot) { dot.innerHTML = "○ Offline"; dot.style.color = "#ef4444"; } };
+      xhr.send();
+    } catch(err) {}
+  }
+  checkHeartbeat();
+  setInterval(checkHeartbeat, 4000);
 </script>
 </body>
 </html>
@@ -1090,6 +1144,7 @@ def main():
         print()
     print("    Open the link above in your phone's browser (Android 4+ supported).")
     print("    IMPORTANT: Phone and PC must be connected to the same Wi-Fi / Hotspot.")
+    print("    TIP: If using a VPN (e.g. ProtonVPN), enable 'Allow LAN' or disconnect it.")
     print("    Press Ctrl+C to stop.\n" + "=" * 64)
 
     try:
